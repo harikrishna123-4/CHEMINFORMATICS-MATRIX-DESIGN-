@@ -1,0 +1,1046 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Molecule Explorer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Doto:wght@400;900&family=Space+Mono:wght@400;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/smiles-drawer@2.1.7/dist/smiles-drawer.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.0.4/3Dmol-min.js"></script>
+<style>
+/* Layout: dot-matrix masthead, left rail of molecule pills, right stage with 2D/3D viewer and readouts. Nothing OS: black, white, one red. */
+:root {
+  --bg: #000000; --panel: #070707; --fg: #FFFFFF; --dim: #8C8C8C; --line: #2B2B2B; --dot: #1E1E1E; --red: #D71921;
+  --display: 'Doto', 'Courier New', monospace; --body: 'Space Mono', ui-monospace, 'Courier New', monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) { --bg: #EFEFED; --panel: #F7F7F5; --fg: #000000; --dim: #6B6B6B; --line: #CFCFCB; --dot: #DADAD6; color-scheme: light; }
+}
+:root[data-theme="light"] { --bg: #EFEFED; --panel: #F7F7F5; --fg: #000000; --dim: #6B6B6B; --line: #CFCFCB; --dot: #DADAD6; color-scheme: light; }
+
+* { box-sizing: border-box; }
+body {
+  background-color: var(--bg); color: var(--fg); font-family: var(--body); font-size: 14px; line-height: 1.5;
+  background-image: radial-gradient(var(--dot) 1.2px, transparent 1.2px); background-size: 18px 18px;
+  padding-block: 32px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  min-height: 100%;
+}
+.wrap { max-width: 1180px; margin: 0 auto; }
+h1 { font-family: var(--display); font-weight: 900; font-size: clamp(2.6rem, 9vw, 5rem); letter-spacing: .06em; line-height: 1; margin: 0; }
+h1 span { color: var(--red); }
+.sub { color: var(--dim); font-size: .72rem; letter-spacing: .26em; text-transform: uppercase; margin: 10px 0 28px; }
+.lbl { color: var(--dim); font-size: .68rem; letter-spacing: .22em; text-transform: uppercase; margin: 0 0 8px; }
+
+.layout { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 860px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+.panel { border: 1px solid var(--line); border-radius: 28px; background: var(--panel); padding: 20px; }
+.rail { display: flex; flex-direction: column; gap: 18px; }
+
+.pills { display: flex; flex-wrap: wrap; gap: 8px; }
+button, input { font: inherit; color: inherit; }
+.pill {
+  background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; cursor: pointer;
+  font-size: .76rem; letter-spacing: .04em; color: var(--fg);
+}
+.pill:hover { border-color: var(--fg); }
+.pill[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.pill.red { border-color: var(--red); color: var(--red); }
+.pill.red:hover { background: var(--red); color: #fff; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+
+.field {
+  width: 100%; background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 10px 16px; font-size: .82rem; color: var(--fg);
+}
+.field::placeholder { color: var(--dim); }
+.field.bad { border-color: var(--red); }
+
+.stage { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.name { font-family: var(--display); font-weight: 900; font-size: clamp(1.7rem, 5vw, 2.6rem); letter-spacing: .04em; line-height: 1.1; margin: 0; overflow-wrap: anywhere; }
+.formula { font-size: 1rem; margin-top: 4px; }
+.smiles { color: var(--dim); font-size: .72rem; word-break: break-all; margin-top: 6px; }
+.viewhead { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.tab-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.pane2d { aspect-ratio: 4 / 3; max-width: 100%; display: grid; place-items: center; }
+.pane2d svg { width: 100%; height: 100%; display: block; }
+.pane3d { position: relative; width: 100%; height: 420px; border-radius: 22px; overflow: hidden; background: #000; border: 1px solid var(--line); }
+.msg { color: var(--dim); text-align: center; padding: 20px; }
+.msg.err { color: var(--red); }
+.hint { color: var(--dim); font-size: .7rem; margin-top: 10px; }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.stat { border: 1px solid var(--line); border-radius: 22px; padding: 14px 16px; background: var(--panel); min-width: 0; }
+.stat b { display: block; font-family: var(--display); font-weight: 900; font-size: 2.2rem; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.stat.hot b { color: var(--red); }
+.stat small { color: var(--dim); font-size: .7rem; }
+
+.rule { display: flex; align-items: center; gap: 10px; margin: 6px 0; font-size: .82rem; }
+.dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--fg); flex: none; }
+.dot.on { background: var(--fg); } .dot.off { background: var(--red); border-color: var(--red); }
+.score { font-family: var(--display); font-weight: 900; font-size: 2.4rem; line-height: 1; margin-top: 14px; }
+.score.off { color: var(--red); }
+.note { color: var(--dim); font-size: .72rem; margin-top: 10px; }
+.list { max-height: 330px; overflow-y: auto; padding-right: 4px; }
+.paperwrap { background: #fff; border-radius: 18px; padding: 24px; overflow-x: auto; }
+@media (prefers-reduced-motion: no-preference) { .pill, .field { transition: background .15s, border-color .15s, color .15s; } }
+
+.nav{flex-wrap:nowrap;overflow-x:auto;margin:0 0 22px;padding-bottom:4px;scrollbar-width:none}.nav::-webkit-scrollbar{display:none}.nav .pill{flex:none}
+.pg.col{display:flex;flex-direction:column;gap:20px}
+.dt{width:100%;border-collapse:collapse}.dt th,.dt td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);font-weight:400;white-space:nowrap;font-size:.8rem}
+.dt th{color:var(--dim);font-size:.66rem;letter-spacing:.14em;text-transform:uppercase}.dt tr.cl{cursor:pointer}.dt tr.cl:hover td{background:var(--dot)}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:18px;margin:12px 0}
+select.field{appearance:none;-webkit-appearance:none;margin-bottom:12px;background:var(--panel)}select.field option{background:var(--panel);color:var(--fg)}
+.fl{list-style:none;margin:0;padding:0}.fl li{padding:8px 0;border-bottom:1px solid var(--line)}.fl li::before{content:"\25CF ";color:var(--red);font-size:.6rem}
+.card{border:1px solid var(--line);border-radius:20px;padding:14px 16px;margin:10px 0}.card b{display:block;margin-bottom:2px}
+.qb{border:1px solid var(--line);border-radius:20px;padding:14px 16px;margin:12px 0}.qb p{margin:0 0 8px;font-weight:700}
+.qb label{display:flex;gap:10px;align-items:flex-start;padding:5px 0;cursor:pointer}.qb input{accent-color:var(--red);margin-top:4px}.qb.ok{border-color:var(--fg)}.qb.no{border-color:var(--red)}
+.chart{width:100%;height:auto;color:var(--fg);display:block}
+.vmsg{font-size:.72rem;margin-top:8px;color:var(--dim)}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+</style>
+
+<div class="wrap">
+  <h1>MOLECULE<span>.</span></h1>
+  <div class="sub">Structure · 3D · Properties · Report · <span id="count">55</span> examples</div>
+  <nav class="tab-row nav" id="nav" aria-label="Pages"></nav>
+
+  <div class="pg" id="pg-explore" hidden><div class="layout">
+    <aside class="panel rail">
+      <div>
+        <p class="lbl">Your own SMILES</p>
+        <input id="custom" class="field" type="text" placeholder="e.g. CC(=O)OC1=CC=CC=C1C(=O)O" autocomplete="off" spellcheck="false">
+        <div class="vmsg" id="vmsg" role="status"></div>
+      </div>
+      <div>
+        <p class="lbl">Category</p>
+        <div class="pills" id="cats"></div>
+      </div>
+      <div>
+        <p class="lbl">Molecule</p>
+        <input id="search" class="field" type="text" placeholder="search all names…" autocomplete="off" style="margin-bottom:10px">
+        <div class="list"><div class="pills" id="mols"></div></div>
+      </div>
+      <div><button class="pill red" id="rand" type="button">SURPRISE ME</button></div>
+    </aside>
+
+    <main class="stage">
+      <section class="panel">
+        <p class="lbl">Selected</p>
+        <h2 class="name" id="nm">ASPIRIN</h2>
+        <div class="formula" id="fm"></div>
+        <div class="smiles" id="sm"></div>
+      </section>
+
+      <section class="panel" id="cv">
+        <div class="viewhead">
+          <div class="tab-row" id="tabs">
+            <button class="pill" type="button" data-tab="2d" aria-pressed="true">2D</button>
+            <button class="pill" type="button" data-tab="3d" aria-pressed="false">3D</button>
+            <button class="pill" type="button" data-tab="report" aria-pressed="false">REPORT</button>
+          </div>
+          <div class="tab-row" id="ctl3d" hidden>
+            <button class="pill" type="button" data-style="stick" aria-pressed="true">STICKS</button>
+            <button class="pill" type="button" data-style="ball" aria-pressed="false">BALL &amp; STICK</button>
+            <button class="pill" type="button" data-style="space" aria-pressed="false">SPACE FILL</button>
+            <button class="pill" type="button" data-style="wire" aria-pressed="false">WIRE</button>
+            <button class="pill" type="button" id="vdw" aria-pressed="false">VDW SURFACE</button>
+            <button class="pill" type="button" id="spin" aria-pressed="true">SPIN</button>
+            <button class="pill" type="button" id="copymol">COPY .MOL</button>
+          </div>
+        </div>
+        <div class="pane2d" id="pane2d"><svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg></div>
+        <div class="pane3d" id="pane3d" hidden></div>
+        <div class="hint" id="hint3d" hidden>Geometry is built in your browser from a simple force model. Bond lengths and angles are realistic, but stereochemistry is not enforced.</div>
+        <div id="paneReport" hidden>
+          <div class="tab-row" id="dlrow" style="margin-bottom:6px"></div>
+          <div class="hint" id="dlnote" style="margin:0 0 4px"></div>
+          <div class="hint" id="dlmsg" role="status" style="margin:0 0 14px;min-height:1.4em"></div>
+          <div class="paperwrap"><div class="rp" id="rp"></div></div>
+        </div>
+      </section>
+
+      <section class="stats" id="stats"></section>
+      <section class="panel" id="lip"></section>
+    </main>
+  </div></div>
+  <div class="pg col" id="pg-home"></div>
+  <div class="pg col" id="pg-theory" hidden></div>
+  <div class="pg col" id="pg-compare" hidden></div>
+  <div class="pg col" id="pg-analysis" hidden></div>
+  <div class="pg col" id="pg-quiz" hidden></div>
+  <div class="pg col" id="pg-final" hidden></div>
+</div>
+
+<script>
+const LIB = {
+  "Medicines": {
+    "Aspirin":"CC(=O)OC1=CC=CC=C1C(=O)O","Paracetamol":"CC(=O)NC1=CC=C(O)C=C1","Ibuprofen":"CC(C)CC1=CC=C(C=C1)C(C)C(=O)O",
+    "Naproxen":"COC1=CC2=CC(=CC=C2C=C1)C(C)C(=O)O","Caffeine":"CN1C=NC2=C1C(=O)N(C(=O)N2C)C","Metformin":"CN(C)C(=N)N=C(N)N",
+    "Penicillin G":"CC1(C)SC2C(NC(=O)Cc3ccccc3)C(=O)N2C1C(=O)O","Diazepam":"CN1C(=O)CN=C(c2ccccc2)c2cc(Cl)ccc12",
+    "Omeprazole":"COc1ccc2[nH]c(nc2c1)S(=O)Cc1ncc(C)c(OC)c1C",
+    "Sildenafil":"CCCc1nn(C)c2c1nc([nH]c2=O)c1cc(ccc1OCC)S(=O)(=O)N1CCN(C)CC1",
+    "Morphine":"CN1CC[C@]23[C@@H]4[C@H]1CC5=C2C(=C(C=C5)O)O[C@H]3[C@H](C=C4)O",
+    "Quinine":"COc1ccc2nccc([C@@H](O)[C@H]3C[N@]4CC[C@H]3C[C@H]4C=C)c2c1"
+  },
+  "Vitamins": {
+    "Vitamin C":"OC[C@H](O)[C@H]1OC(=O)C(O)=C1O","Niacin (B3)":"OC(=O)c1cccnc1","Pyridoxine (B6)":"Cc1ncc(CO)c(CO)c1O",
+    "Biotin (B7)":"O=C(O)CCCC[C@@H]1SC[C@@H]2NC(=O)N[C@H]12",
+    "Folic acid (B9)":"Nc1nc2ncc(CNc3ccc(cc3)C(=O)N[C@@H](CCC(O)=O)C(O)=O)nc2c(=O)[nH]1",
+    "Retinol (A)":"CC1=C(C(CCC1)(C)C)C=CC(C)=CC=CC(C)=CCO"
+  },
+  "Amino acids": {
+    "Glycine":"NCC(=O)O","Alanine":"C[C@H](N)C(=O)O","Phenylalanine":"N[C@@H](Cc1ccccc1)C(=O)O","Tyrosine":"N[C@@H](Cc1ccc(O)cc1)C(=O)O",
+    "Tryptophan":"N[C@@H](Cc1c[nH]c2ccccc12)C(=O)O","Glutamic acid":"N[C@@H](CCC(=O)O)C(=O)O"
+  },
+  "Brain & hormones": {
+    "Dopamine":"NCCc1ccc(O)c(O)c1","Serotonin":"NCCc1c[nH]c2ccc(O)cc12","Melatonin":"COc1ccc2[nH]cc(CCNC(C)=O)c2c1",
+    "Adrenaline":"CNC[C@H](O)c1ccc(O)c(O)c1","GABA":"NCCCC(=O)O","Acetylcholine":"CC(=O)OCC[N+](C)(C)C",
+    "Testosterone":"C[C@]12CC[C@H]3[C@@H](CCC4=CC(=O)CC[C@]34C)[C@@H]1CC[C@@H]2O",
+    "Estradiol":"C[C@]12CC[C@H]3[C@H]([C@@H]1CC[C@@H]2O)CCc4cc(O)ccc34",
+    "Cholesterol":"C[C@H](CCCC(C)C)[C@H]1CC[C@@H]2[C@@]1(CC[C@H]3[C@H]2CC=C4[C@@]3(CC[C@@H](C4)O)C)C"
+  },
+  "Food & flavour": {
+    "Glucose":"OC[C@H]1OC(O)[C@H](O)[C@@H](O)[C@@H]1O",
+    "Sucrose":"OC[C@H]1O[C@@](CO)(O[C@H]2O[C@H](CO)[C@@H](O)[C@H](O)[C@H]2O)[C@@H](O)[C@@H]1O",
+    "Citric acid":"OC(=O)CC(O)(CC(O)=O)C(O)=O","Vanillin":"COc1cc(C=O)ccc1O","Capsaicin":"COc1cc(CNC(=O)CCCCC=CC(C)C)ccc1O",
+    "Menthol":"CC(C)[C@@H]1CC[C@@H](C)C[C@H]1O","Limonene":"CC1=CCC(CC1)C(=C)C","Nicotine":"CN1CCC[C@H]1c1cccnc1",
+    "Resveratrol":"Oc1ccc(C=Cc2cc(O)cc(O)c2)cc1","Curcumin":"COc1cc(C=CC(=O)CC(=O)C=Cc2ccc(O)c(OC)c2)ccc1O"
+  },
+  "Solvents & basics": {
+    "Water":"O","Methane":"C","Ethanol":"CCO","Acetone":"CC(C)=O","Acetic acid":"CC(=O)O","Urea":"NC(N)=O","DMSO":"CS(C)=O",
+    "THF":"C1CCOC1","Chloroform":"ClC(Cl)Cl","Benzene":"c1ccccc1","Phenol":"Oc1ccccc1","Aniline":"Nc1ccccc1","Pyridine":"c1ccncc1","Toluene":"Cc1ccccc1","Naphthalene":"c1ccc2ccccc2c1"
+  }
+};
+const ALL = {}; Object.values(LIB).forEach(g => Object.assign(ALL, g));
+const CATS = Object.keys(LIB);
+
+/* ---------- SMILES reader ---------- */
+const EL = {
+  H:[1.008,[1]], B:[10.81,[3]], C:[12.011,[4]], N:[14.007,[3,5]], O:[15.999,[2]], F:[18.998,[1]], Si:[28.085,[4]],
+  P:[30.974,[3,5]], S:[32.06,[2,4,6]], Cl:[35.45,[1]], Br:[79.904,[1]], I:[126.904,[1]], Se:[78.971,[2,4,6]],
+  Li:[6.94,[1]], Na:[22.99,[1]], K:[39.098,[1]], Mg:[24.305,[2]], Ca:[40.078,[2]], Fe:[55.845,[2,3]], Zn:[65.38,[2]], Cu:[63.546,[1,2]]
+};
+function parseSmiles(s) {
+  const atoms = [], bonds = [], stack = [], rings = {};
+  let prev = -1, pend = null, i = 0;
+  const addBond = (a, b, ch) => {
+    let order = 1, arom = false;
+    if (ch === '=') order = 2; else if (ch === '#') order = 3; else if (ch === ':') arom = true;
+    else if (ch === null && atoms[a].arom && atoms[b].arom) arom = true;
+    bonds.push({ a, b, order, arom });
+  };
+  const addAtom = a => { const idx = atoms.length; atoms.push(a); if (prev >= 0) addBond(prev, idx, pend); pend = null; prev = idx; };
+  while (i < s.length) {
+    const c = s[i];
+    if (c === '(') { if (prev < 0) throw 0; stack.push(prev); i++; continue; }
+    if (c === ')') { if (!stack.length) throw 0; prev = stack.pop(); i++; continue; }
+    if (c === '.') { prev = -1; pend = null; i++; continue; }
+    if ('-=#:/\\'.includes(c)) { pend = (c === '/' || c === '\\') ? '-' : c; i++; continue; }
+    if (/\d/.test(c) || c === '%') {
+      let n; if (c === '%') { n = s.substr(i + 1, 2); i += 3; } else { n = c; i++; }
+      if (prev < 0) throw 0;
+      if (rings[n]) { addBond(rings[n].atom, prev, pend || rings[n].bond); delete rings[n]; }
+      else rings[n] = { atom: prev, bond: pend };
+      pend = null; continue;
+    }
+    if (c === '[') {
+      const j = s.indexOf(']', i); if (j < 0) throw 0;
+      const body = s.slice(i, j + 1);
+      const m = /^\[(\d+)?([A-Za-z][a-z]?)(@@?)?(?:H(\d*))?([+-]+\d*)?(?::\d+)?\]$/.exec(body);
+      if (!m) throw 0;
+      const sym = m[2], arom = sym[0] === sym[0].toLowerCase();
+      const el = sym[0].toUpperCase() + sym.slice(1);
+      if (!EL[el]) throw 0;
+      let h = 0;
+      if (/H/.test(body.replace(/^\[\d*[A-Za-z][a-z]?/, ''))) h = m[4] ? +m[4] : 1;
+      let ch = 0;
+      if (m[5]) { const t = /^([+-])(\d+)$/.exec(m[5]); ch = t ? (t[1] === '+' ? +t[2] : -t[2]) : (m[5].split('+').length - 1) - (m[5].split('-').length - 1); }
+      addAtom({ el, arom, h, ch, br: true }); i = j + 1; continue;
+    }
+    const two = s.substr(i, 2);
+    if (two === 'Cl' || two === 'Br') { addAtom({ el: two, arom: false, h: 0, ch: 0 }); i += 2; continue; }
+    if ('BCNOPSFI'.includes(c)) { addAtom({ el: c, arom: false, h: 0, ch: 0 }); i++; continue; }
+    if ('bcnosp'.includes(c)) { addAtom({ el: c.toUpperCase(), arom: true, h: 0, ch: 0 }); i++; continue; }
+    throw 0;
+  }
+  if (!atoms.length || stack.length || Object.keys(rings).length) throw 0;
+  atoms.forEach(a => { a.adj = []; a.base = 0; });
+  bonds.forEach((b, k) => {
+    atoms[b.a].adj.push({ j: b.b, k, order: b.order }); atoms[b.b].adj.push({ j: b.a, k, order: b.order });
+    atoms[b.a].base += b.order; atoms[b.b].base += b.order;
+  });
+  atoms.forEach(a => { a.nb = a.adj.map(e => e.j); });
+  atoms.forEach(a => {
+    if (a.br) return;
+    const v = EL[a.el][1];
+    if (a.arom) {
+      a.h = (a.el === 'C' || a.el === 'N' || a.el === 'B' || a.el === 'P') ? Math.max(0, v[0] - a.base - 1) : Math.max(0, v[0] - a.base);
+    } else {
+      const t = v.find(x => x >= a.base); a.h = t === undefined ? 0 : t - a.base;
+    }
+  });
+  const g = { atoms, bonds };
+  g.rings = findRings(g);
+  perceiveAromatic(g);
+  return g;
+}
+function findRings(g) {
+  const n = g.atoms.length, rs = [], seen = new Set();
+  g.bonds.forEach((b, k) => {
+    const prev = new Array(n).fill(-2); prev[b.a] = -1; const q = [b.a];
+    while (q.length) {
+      const u = q.shift(); if (u === b.b) break;
+      for (const e of g.atoms[u].adj) { if (e.k === k || prev[e.j] !== -2) continue; prev[e.j] = u; q.push(e.j); }
+    }
+    if (prev[b.b] === -2) return;
+    const cyc = []; for (let x = b.b; x !== -1; x = prev[x]) cyc.push(x);
+    if (cyc.length > 9) return;
+    const key = [...cyc].sort((x, y) => x - y).join(',');
+    if (!seen.has(key)) { seen.add(key); rs.push(cyc); }
+  });
+  return rs;
+}
+function perceiveAromatic(g) {
+  const A = g.atoms;
+  A.forEach(a => { a.ar = a.arom; });
+  g.rings.forEach(r => {
+    let pi = 0, ok = true;
+    for (const i of r) {
+      const a = A[i];
+      if (a.arom) { pi += (a.el === 'O' || a.el === 'S' || a.el === 'Se' || (a.el === 'N' && a.adj.length + a.h >= 3)) ? 2 : 1; continue; }
+      if (a.adj.some(e => e.order === 3)) { ok = false; break; }
+      const dbl = a.adj.filter(e => e.order === 2);
+      if (dbl.some(e => r.includes(e.j))) pi += 1;
+      else if (dbl.some(e => A[e.j].el !== 'C')) pi += 0;
+      else if (dbl.length) { ok = false; break; }
+      else if ((a.el === 'O' || a.el === 'S' || a.el === 'Se') && a.adj.length === 2) pi += 2;
+      else if (a.el === 'N' && a.ch === 0 && a.adj.length + a.h === 3) pi += 2;
+      else { ok = false; break; }
+    }
+    if (ok && pi % 4 === 2) {
+      r.forEach((i, x) => {
+        A[i].ar = true;
+        const j = r[(x + 1) % r.length]; const e = A[i].adj.find(t => t.j === j);
+        if (e) g.bonds[e.k].arom = true;
+      });
+    }
+  });
+}
+
+/* ---------- numbers ---------- */
+const HET = ['N', 'O', 'S', 'F', 'Cl', 'Br', 'I', 'P'];
+// Atom-contribution LogP, Wildman-Crippen style, with a few values tuned against RDKit reference outputs.
+function logP(g) {
+  const A = g.atoms, bAr = e => g.bonds[e.k].arom; let t = 0;
+  A.forEach(a => {
+    const nbEl = a.adj.map(e => A[e.j]);
+    const dbl = a.adj.filter(e => e.order === 2).map(e => A[e.j]);
+    const trp = a.adj.some(e => e.order === 3);
+    if (a.h) {
+      let hv = 0.1230;
+      if (a.el === 'O') {
+        const c = nbEl.find(x => x.el === 'C' || x.el === 'S' || x.el === 'P');
+        const acid = c && c.adj.some(e => e.order === 2 && A[e.j].el === 'O');
+        hv = acid ? 0.2980 : -0.2677;
+      } else if (a.el === 'N') hv = 0.2142; else if (a.el === 'S') hv = 0.1125;
+      t += hv * a.h;
+    }
+    switch (a.el) {
+      case 'C': {
+        if (a.ar) {
+          if (a.h > 0) { t += 0.1581; break; }
+          const subs = a.adj.filter(e => !bAr(e));
+          if (!subs.length) { t += 0.2955; break; }
+          const s = subs[0], sa = A[s.j];
+          if (s.order === 2) t += -0.3974;
+          else if (sa.ar) t += 0.2713;
+          else t += ({ C: 0.1360, N: 0.4619, O: 0.5437, S: 0.15, F: 0.0, Cl: 0.245, Br: 0.198, I: 0.0 })[sa.el] ?? -0.5443;
+          break;
+        }
+        if (dbl.some(x => x.el !== 'C')) { t += -0.2783; break; }
+        if (trp) { t += 0.0017; break; }
+        if (dbl.length) { t += nbEl.some(x => x.ar) ? 0.2640 : 0.1551; break; }
+        const nhet = nbEl.filter(x => HET.includes(x.el)).length;
+        if (nhet > 0) { t += (a.h >= 2) ? -0.2035 : -0.2051; break; }
+        if (nbEl.some(x => x.ar)) {
+          const arC = nbEl.some(x => x.ar && x.el === 'C');
+          if (a.h === 3) t += arC ? 0.08452 : -0.1444; else if (a.h === 2) t += -0.0516; else if (a.h === 1) t += CHAR; else t += -0.0967;
+          break;
+        }
+        t += a.h >= 2 ? 0.1441 : 0.0; break;
+      }
+      case 'O': {
+        if (a.ar) t += 0.1552;
+        else if (a.adj.some(e => e.order === 2)) t += -0.1526;
+        else if (a.ch < 0) t += -1.326;
+        else if (a.h > 0) t += -0.2893;
+        else {
+          const carbonyl = nbEl.some(x => x.adj.some(e => e.order === 2 && A[e.j].el === 'O'));
+          if (carbonyl) t += -0.1526; else if (nbEl.some(x => x.ar)) t += -0.4195; else t += -0.0684;
+        }
+        break;
+      }
+      case 'N': {
+        if (a.ar) t += -0.3239;
+        else if (a.ch > 0) t += -0.3187;
+        else if (dbl.length) t += a.h ? 0.08387 : 0.1836;
+        else if (trp) t += 0.0;
+        else {
+          const arN = nbEl.some(x => x.ar);
+          if (a.h === 2) t += arN ? -1.027 : -1.019;
+          else if (a.h === 1) t += arN ? -0.5188 : -0.7096;
+          else t += arN ? -0.4458 : -0.3187;
+        }
+        break;
+      }
+      case 'S': t += a.ar ? 0.6237 : (a.adj.some(e => e.order === 2) ? -0.0024 : 0.6482); break;
+      case 'F': t += 0.4202; break; case 'Cl': t += 0.6895; break; case 'Br': t += 0.8456; break; case 'I': t += 0.8857; break;
+      case 'P': t += 0.8612; break;
+    }
+  });
+  return t;
+}
+const CHAR = 0.1193; // CH attached to an aromatic ring
+// Topological polar surface area, Ertl-style fragment values (N and O only).
+function tpsa(g) {
+  const A = g.atoms; let t = 0;
+  A.forEach(a => {
+    const dbl = a.adj.some(e => e.order === 2), trp = a.adj.some(e => e.order === 3), n = a.adj.length;
+    if (a.el === 'N') {
+      if (a.ar) t += a.h ? 15.79 : (n === 3 ? 4.93 : 12.89);
+      else if (a.ch > 0) t += 0;
+      else if (trp) t += 23.79;
+      else if (dbl) t += a.h ? 23.85 : (n === 3 ? 3.01 : 12.36);
+      else t += a.h === 2 ? 26.02 : a.h === 1 ? 12.03 : 3.24;
+    } else if (a.el === 'O') {
+      if (a.ar) t += 13.14;
+      else if (dbl) t += 17.07;
+      else if (a.ch < 0) t += 23.06;
+      else if (a.h) t += 20.23;
+      else t += 9.23;
+    }
+  });
+  return t;
+}
+function props(g) {
+  const cnt = {}; let mw = 0, charge = 0, hbd = 0, hba = 0;
+  g.atoms.forEach(a => {
+    cnt[a.el] = (cnt[a.el] || 0) + 1; mw += EL[a.el][0] + a.h * EL.H[0];
+    if (a.h) cnt.H = (cnt.H || 0) + a.h; charge += a.ch;
+    if (a.el === 'N' || a.el === 'O') { hba++; if (a.h > 0) hbd++; }
+  });
+  const inRing = new Set();
+  g.rings.forEach(r => r.forEach((x, idx) => {
+    const y = r[(idx + 1) % r.length]; const e = g.atoms[x].adj.find(t => t.j === y); if (e) inRing.add(e.k);
+  }));
+  let rot = 0;
+  g.bonds.forEach((b, k) => {
+    if (inRing.has(k) || b.order !== 1 || b.arom) return;
+    const A = g.atoms[b.a], B = g.atoms[b.b];
+    if (A.adj.length < 2 || B.adj.length < 2) return;
+    if (A.adj.some(e => e.order === 3) || B.adj.some(e => e.order === 3)) return;
+    const amide = (X, Y) => X.el === 'C' && Y.el === 'N' && X.adj.some(e => e.order === 2 && g.atoms[e.j].el === 'O');
+    if (amide(A, B) || amide(B, A)) return;
+    rot++;
+  });
+  let comps = 0; const seen = new Set();
+  g.atoms.forEach((_, i) => { if (seen.has(i)) return; comps++; const q = [i]; seen.add(i); while (q.length) { const u = q.pop(); g.atoms[u].nb.forEach(w => { if (!seen.has(w)) { seen.add(w); q.push(w); } }); } });
+  const rings = g.bonds.length - g.atoms.length + comps;
+  const rank = e => e === 'C' ? -2 : e === 'H' ? -1 : 0;
+  const order = Object.keys(cnt).sort((a, b) => (cnt.C ? rank(a) - rank(b) : 0) || a.localeCompare(b));
+  let f = order.map(e => e + (cnt[e] > 1 ? '<sub>' + cnt[e] + '</sub>' : '')).join('');
+  if (charge) f += '<sup>' + (Math.abs(charge) > 1 ? Math.abs(charge) : '') + (charge > 0 ? '+' : '−') + '</sup>';
+  return { mw, hbd, hba, rot, rings: Math.max(0, rings), heavy: g.atoms.length, formula: f, logp: logP(g), tpsa: tpsa(g) };
+}
+
+/* ---------- atoms and bonds summary ---------- */
+function bondInfo(g) {
+  const A = g.atoms; let H = 0; A.forEach(a => { H += a.h; });
+  const heavyBonds = g.bonds.length, sigma = heavyBonds + H;
+  let pi = 0;
+  g.bonds.forEach(b => { if (!(b.arom && A[b.a].ar && A[b.b].ar) && b.order > 1) pi += b.order - 1; });
+  let nAr = 0;
+  A.forEach(a => {
+    if (!a.ar) return;
+    if (a.el === 'O' || a.el === 'S' || a.el === 'Se') return;
+    if (a.el === 'N' && a.adj.length + a.h >= 3) return;
+    if (a.adj.some(e => e.order >= 2 && !g.bonds[e.k].arom)) return;
+    nAr++;
+  });
+  pi += Math.floor(nAr / 2);
+  return { total: A.length + H, heavyBonds, sigma, pi, bonds: sigma + pi, H };
+}
+function bondStats(g) {
+  const b = bondInfo(g);
+  return stat('Total atoms (with H)', b.total) + stat('Heavy-atom bonds', b.heavyBonds) + stat('Sigma (σ) bonds', b.sigma) + stat('Pi (π) bonds', b.pi) + stat('Total bonds (σ+π)', b.bonds);
+}
+
+/* ---------- 3D builder ---------- */
+const RAD = { H:.31, C:.76, N:.71, O:.66, F:.57, Cl:1.02, Br:1.2, I:1.39, S:1.05, P:1.07, B:.84, Si:1.11, Se:1.2, Li:1.28, Na:1.66, K:2.03, Mg:1.41, Ca:1.76, Fe:1.32, Zn:1.22, Cu:1.32 };
+const VDW = { H:1.2, C:1.7, N:1.55, O:1.52, F:1.47, Cl:1.75, Br:1.85, I:1.98, S:1.8, P:1.8 };
+function embed3D(g) {
+  const at = g.atoms.map(a => ({ el: a.el }));
+  const bd = g.bonds.map(b => ({ a: b.a, b: b.b, o: b.order, ar: b.arom }));
+  g.atoms.forEach((a, i) => { for (let k = 0; k < a.h; k++) { at.push({ el: 'H' }); bd.push({ a: i, b: at.length - 1, o: 1, ar: false }); } });
+  const n = at.length, nbr = at.map(() => []);
+  bd.forEach((b, k) => { nbr[b.a].push({ j: b.b, k }); nbr[b.b].push({ j: b.a, k }); });
+  const len = b => ((RAD[at[b.a].el] || 1) + (RAD[at[b.b].el] || 1)) * (b.ar ? 0.92 : b.o === 2 ? 0.89 : b.o === 3 ? 0.8 : 1);
+  const L = bd.map(len), key = (i, j) => i < j ? i * n + j : j * n + i;
+  const C = [], fixed = new Set();
+  bd.forEach((b, k) => { C.push([b.a, b.b, L[k], 1]); fixed.add(key(b.a, b.b)); });
+  const smallRings = g.rings.filter(r => r.length <= 5);
+  for (let c = 0; c < n; c++) {
+    const ns = nbr[c]; if (ns.length < 2) continue;
+    const trip = ns.some(e => bd[e.k].o === 3), dbls = ns.filter(e => bd[e.k].o === 2).length, arm = ns.some(e => bd[e.k].ar);
+    const base = (trip || dbls >= 2) ? 180 : (dbls || arm) ? 120 : 109.5;
+    for (let x = 0; x < ns.length; x++) for (let y = x + 1; y < ns.length; y++) {
+      let th = base;
+      const r = smallRings.find(rr => rr.includes(c) && rr.includes(ns[x].j) && rr.includes(ns[y].j));
+      if (r) th = (r.length - 2) * 180 / r.length;
+      const d1 = L[ns[x].k], d2 = L[ns[y].k];
+      const d = Math.sqrt(Math.max(0.01, d1 * d1 + d2 * d2 - 2 * d1 * d2 * Math.cos(th * Math.PI / 180)));
+      C.push([ns[x].j, ns[y].j, d, 1]); fixed.add(key(ns[x].j, ns[y].j));
+    }
+  }
+  bd.forEach((b, k) => {
+    if (b.o !== 2 || b.ar) return;
+    const ringB = g.rings.some(r => r.includes(b.a) && r.includes(b.b));
+    nbr[b.a].forEach(ea => { if (ea.j === b.b) return; nbr[b.b].forEach(eb => {
+      if (eb.j === b.a) return;
+      const d1 = L[ea.k], d2 = L[eb.k], l = L[k], s = ringB ? 1 : -1;
+      const dx = l + 0.5 * (d1 + d2), dy = ringB ? 0.866 * (d2 - d1) : 0.866 * (d1 + d2);
+      C.push([ea.j, eb.j, Math.sqrt(dx * dx + dy * dy), 0.6]);
+    }); });
+  });
+  const cdeg = new Float64Array(n); C.forEach(c => { cdeg[c[0]]++; cdeg[c[1]]++; });
+  const rep = [];
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) if (!fixed.has(key(i, j))) rep.push([i, j, 0.68 * ((VDW[at[i].el] || 1.8) + (VDW[at[j].el] || 1.8))]);
+  function run(seed) {
+    let s = seed * 9301 + 49297; const rnd = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+    const P = new Float64Array(3 * n), F = new Float64Array(3 * n), sz = 1.6 * Math.cbrt(n);
+    for (let i = 0; i < 3 * n; i++) P[i] = (rnd() - 0.5) * sz;
+    const ITER = 1400;
+    for (let it = 0; it < ITER; it++) {
+      F.fill(0);
+      for (const [i, j, d0, w] of C) {
+        const dx = P[3*i] - P[3*j], dy = P[3*i+1] - P[3*j+1], dz = P[3*i+2] - P[3*j+2];
+        const d = Math.sqrt(dx*dx + dy*dy + dz*dz) || 1e-6, f = (d - d0) / d * w * 0.5;
+        F[3*i] -= f*dx; F[3*i+1] -= f*dy; F[3*i+2] -= f*dz; F[3*j] += f*dx; F[3*j+1] += f*dy; F[3*j+2] += f*dz;
+      }
+      for (const [i, j, r0] of rep) {
+        const dx = P[3*i] - P[3*j], dy = P[3*i+1] - P[3*j+1], dz = P[3*i+2] - P[3*j+2];
+        const d = Math.sqrt(dx*dx + dy*dy + dz*dz) || 1e-6; if (d >= r0) continue;
+        const f = (r0 - d) / d * 0.25;
+        F[3*i] += f*dx; F[3*i+1] += f*dy; F[3*i+2] += f*dz; F[3*j] -= f*dx; F[3*j+1] -= f*dy; F[3*j+2] -= f*dz;
+      }
+      const jit = it < 250 ? 0.05 * (1 - it / 250) : 0;
+      for (let i = 0; i < n; i++) { const k = 1.1 / Math.max(1, cdeg[i] * 0.5 + 1);
+        P[3*i] += k * F[3*i] + (rnd() - .5) * jit; P[3*i+1] += k * F[3*i+1] + (rnd() - .5) * jit; P[3*i+2] += k * F[3*i+2] + (rnd() - .5) * jit; }
+    }
+    let E = 0;
+    for (const [i, j, d0, w] of C) { const d = Math.hypot(P[3*i]-P[3*j], P[3*i+1]-P[3*j+1], P[3*i+2]-P[3*j+2]); E += w * (d - d0) ** 2; }
+    for (const [i, j, r0] of rep) { const d = Math.hypot(P[3*i]-P[3*j], P[3*i+1]-P[3*j+1], P[3*i+2]-P[3*j+2]); if (d < r0) E += 0.5 * (r0 - d) ** 2; }
+    return { P, E };
+  }
+  let best = null; const tries = n > 60 ? 3 : 5;
+  for (let sd = 1; sd <= tries; sd++) { const r = run(sd); if (!best || r.E < best.E) best = r; }
+  const P = best.P; let cx = 0, cy = 0, cz = 0;
+  for (let i = 0; i < n; i++) { cx += P[3*i]; cy += P[3*i+1]; cz += P[3*i+2]; }
+  cx /= n; cy /= n; cz /= n;
+  const pad = (v, w) => String(v).padStart(w), f4 = v => pad(v.toFixed(4), 10);
+  let mb = '\n  molecule\n\n' + pad(n, 3) + pad(bd.length, 3) + '  0  0  0  0  0  0  0  0999 V2000\n';
+  for (let i = 0; i < n; i++) mb += f4(P[3*i] - cx) + f4(P[3*i+1] - cy) + f4(P[3*i+2] - cz) + ' ' + at[i].el.padEnd(3) + ' 0  0  0  0  0  0  0  0  0  0  0  0\n';
+  bd.forEach(b => { mb += pad(b.a + 1, 3) + pad(b.b + 1, 3) + pad(b.o, 3) + '  0\n'; });
+  mb += 'M  END\n';
+  return { molblock: mb, energy: best.E, n };
+}
+
+/* ---------- UI ---------- */
+const $ = id => document.getElementById(id);
+let cat = CATS[0], cur = { name: 'Aspirin', smiles: ALL.Aspirin }, curG = null;
+let tab = '2d', styleKind = 'stick', spinOn = true, viewer = null, vdwOn = false;
+const cache3d = {};
+
+function renderCats() {
+  $('cats').innerHTML = '';
+  CATS.forEach(c => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'pill'; b.textContent = c;
+    b.setAttribute('aria-pressed', c === cat && !$('search').value);
+    b.onclick = () => { cat = c; $('search').value = ''; renderCats(); renderMols(); };
+    $('cats').appendChild(b);
+  });
+}
+function renderMols() {
+  const q = $('search').value.trim().toLowerCase();
+  const names = q ? Object.keys(ALL).filter(n => n.toLowerCase().includes(q)) : Object.keys(LIB[cat]);
+  $('mols').innerHTML = '';
+  if (!names.length) { $('mols').innerHTML = '<span class="lbl">No match</span>'; return; }
+  names.forEach(n => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'pill'; b.textContent = n;
+    b.setAttribute('aria-pressed', n === cur.name);
+    b.onclick = () => { $('custom').value = ''; pick(n, ALL[n]); };
+    $('mols').appendChild(b);
+  });
+}
+let lastLib = { name: 'Aspirin', smiles: ALL.Aspirin };
+function pick(name, smiles) { cur = { name, smiles }; lastLib = cur; renderMols(); show(); }
+
+function stat(l, v, u, hot) { return `<div class="stat${hot ? ' hot' : ''}"><small>${l}</small><b>${v}</b><small>${u || '&nbsp;'}</small></div>`; }
+function themeColors() {
+  const cs = getComputedStyle(document.documentElement);
+  return { fg: cs.getPropertyValue('--fg').trim() || '#ffffff', red: cs.getPropertyValue('--red').trim() || '#D71921', dim: cs.getPropertyValue('--dim').trim() || '#8c8c8c' };
+}
+function drawStructure(smiles) {
+  const svg = $('svg'); svg.innerHTML = '';
+  if (typeof SmilesDrawer === 'undefined') { $('pane2d').innerHTML = '<div class="msg">Structure drawing library could not load.</div>'; return; }
+  const { fg, red } = themeColors();
+  const theme = { C: fg, O: red, N: fg, F: fg, CL: fg, BR: fg, I: fg, P: fg, S: fg, B: fg, SI: fg, H: fg, BACKGROUND: 'transparent' };
+  const sd = new SmilesDrawer.SvgDrawer({ width: 640, height: 480, bondThickness: 1.7, padding: 24, themes: { nothing: theme } });
+  SmilesDrawer.parse(smiles, tree => { try { sd.draw(tree, svg, 'nothing'); } catch (e) { svg.innerHTML = ''; } }, () => { svg.innerHTML = ''; });
+}
+
+function render3D() {
+  const host = $('pane3d'); host.innerHTML = ''; viewer = null;
+  if (!curG) return;
+  if (typeof $3Dmol === 'undefined') { host.innerHTML = '<div class="msg">3D viewer library could not load.</div>'; return; }
+  host.innerHTML = '<div class="msg">Building 3D geometry…</div>';
+  const smiles = cur.smiles;
+  setTimeout(() => {
+    if (smiles !== cur.smiles) return;
+    let res = cache3d[smiles];
+    if (!res) { try { res = cache3d[smiles] = embed3D(curG); } catch (e) { res = null; } }
+    host.innerHTML = '';
+    if (!res) { host.innerHTML = '<div class="msg err">Could not build a 3D shape for this molecule.</div>'; return; }
+    const { fg, red, dim } = themeColors();
+    const cf = a => (a.elem === 'C' || a.elem === 'H' || a.elem === 'N') ? '#1E5BFF' : '#D71921';
+    viewer = $3Dmol.createViewer(host, { backgroundAlpha: 0 });
+    viewer.addModel(res.molblock, 'sdf');
+    const sty = styleKind === 'ball' ? { stick: { radius: 0.11, color: '#FFFFFF' }, sphere: { scale: 0.38, colorfunc: cf } }
+      : styleKind === 'space' ? { sphere: { scale: 1, colorfunc: cf } }
+      : styleKind === 'wire' ? { line: { linewidth: 2, color: '#FFFFFF' }, sphere: { scale: 0.14, colorfunc: cf } }
+      : { stick: { radius: 0.14, color: '#FFFFFF' }, sphere: { scale: 0.24, colorfunc: cf } };
+    viewer.setStyle({}, sty);
+    if (vdwOn && styleKind !== 'space') { try { viewer.addSurface($3Dmol.SurfaceType.VDW, { opacity: 0.22, color: '#FFFFFF' }); } catch (e) {} }
+    viewer.zoomTo(); viewer.render();
+    if (spinOn) viewer.spin('y', 0.6);
+  }, 30);
+}
+function setTab(t) {
+  tab = t;
+  document.querySelectorAll('#tabs .pill').forEach(b => b.setAttribute('aria-pressed', b.dataset.tab === t));
+  $('pane2d').hidden = t !== '2d'; $('pane3d').hidden = t !== '3d'; $('ctl3d').hidden = t !== '3d'; $('hint3d').hidden = t !== '3d'; $('paneReport').hidden = t !== 'report';
+  if (t === '3d') render3D(); else { if (viewer) { try { viewer.spin(false); } catch (e) {} } }
+  if (t === 'report') renderReport();
+}
+
+function show() {
+  let g, p;
+  const ok = (() => { try { g = parseSmiles(cur.smiles); p = props(g); return true; } catch (e) { return false; } })();
+  $('custom').classList.toggle('bad', !ok && !!$('custom').value);
+  if (!ok) {
+    curG = null; $('vmsg').textContent = '✕ Invalid SMILES. Check the string.';
+    $('nm').textContent = 'INVALID SMILES'; $('nm').style.color = 'var(--red)'; $('fm').innerHTML = ''; $('sm').textContent = 'Check the string and try again.';
+    $('stats').innerHTML = ''; $('lip').innerHTML = ''; $('svg').innerHTML = ''; if (tab === '3d') $('pane3d').innerHTML = ''; $('rp').innerHTML = '<p class="note">Enter a valid SMILES to build a report.</p>'; lastReport = null; renderDlButtons(); return;
+  }
+  curG = g; $('vmsg').textContent = '● Valid molecular structure detected';
+  $('nm').style.color = ''; $('nm').textContent = cur.name.toUpperCase(); $('fm').innerHTML = p.formula; $('sm').textContent = cur.smiles;
+  drawStructure(cur.smiles);
+  if (tab === '3d') render3D();
+  if (tab === 'report') renderReport();
+  $('stats').innerHTML =
+    stat('Molar mass', p.mw.toFixed(1), 'g/mol', true) + stat('LogP', p.logp.toFixed(2), 'estimated', true) + stat('TPSA', p.tpsa.toFixed(1), 'Å² polar surface') +
+    stat('H-bond donors', p.hbd, 'N/O with H') + stat('H-bond acceptors', p.hba, 'N + O atoms') + stat('Rotatable bonds', p.rot) +
+    stat('Rings', p.rings) + stat('Heavy atoms', p.heavy) + bondStats(g);
+  const rules = [['Molar mass ≤ 500', p.mw <= 500], ['LogP ≤ 5', p.logp <= 5], ['H-bond donors ≤ 5', p.hbd <= 5], ['H-bond acceptors ≤ 10', p.hba <= 10]];
+  const pass = rules.filter(r => r[1]).length;
+  $('lip').innerHTML = '<p class="lbl">Lipinski rule of five</p>' +
+    rules.map(r => `<div class="rule"><span class="dot ${r[1] ? 'on' : 'off'}"></span>${r[0]}</div>`).join('') +
+    `<div class="score ${pass >= 3 ? '' : 'off'}">${pass}/4</div><div class="lbl" style="margin-top:6px">${pass >= 3 ? 'Oral drug-like' : 'Unlikely oral drug'}</div>` +
+    '<div class="note">LogP and TPSA are estimates from atom and fragment contributions, usually within about 0.5 of RDKit. Rough screening only, not medical or pharmaceutical advice.</div>';
+}
+
+/* ---------- report generator + downloads ---------- */
+const REPORT_CSS = `
+.rp{background:#fff;color:#111;font:13px/1.55 'Space Mono',ui-monospace,'Courier New',monospace;max-width:820px;margin:0 auto}
+.rp h1{font-family:'Doto','Courier New',monospace;font-weight:900;font-size:34px;letter-spacing:.04em;margin:0;line-height:1.1;overflow-wrap:anywhere}
+.rp h1 i{color:#D71921;font-style:normal}
+.rp .meta{color:#6b6b6b;font-size:11px;letter-spacing:.18em;text-transform:uppercase;margin:6px 0 18px}
+.rp h2{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:#6b6b6b;font-weight:400;margin:22px 0 8px;border-top:1px solid #ddd;padding-top:12px}
+.rp .struct{border:1px solid #ddd;border-radius:16px;padding:8px}
+.rp .struct svg{width:100%;max-width:520px;height:auto;display:block;margin:0 auto}
+.rp table{border-collapse:collapse;width:100%}
+.rp td,.rp th{text-align:left;padding:6px 8px;border-bottom:1px solid #eee;font-weight:400;vertical-align:top}
+.rp td.v{text-align:right;font-variant-numeric:tabular-nums}
+.rp td.smi{word-break:break-all;color:#444;font-size:12px}
+.rp .u{color:#6b6b6b;font-size:11px}
+.rp .dot{display:inline-block;width:10px;height:10px;border-radius:50%;border:1px solid #111;margin-right:8px}
+.rp .dot.on{background:#111}
+.rp .dot.off{background:#D71921;border-color:#D71921}
+.rp .verdict{font-weight:700;margin:10px 0 0}
+.rp .note{color:#6b6b6b;font-size:11px;margin-top:18px}
+`;
+(function () { const s = document.createElement('style'); s.textContent = REPORT_CSS; document.head.appendChild(s); })();
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const plainF = h => h.replace(/<\/?su[bp]>/g, '');
+const slugOf = n => (n.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'molecule');
+const csvCell = v => { const s = String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+const csvText = v => csvCell(/^[=+\-@\t\r]/.test(String(v)) ? "'" + v : v);
+const lipRules = p => [['Molar mass ≤ 500', p.mw <= 500, p.mw.toFixed(1) + ' g/mol'], ['LogP ≤ 5', p.logp <= 5, p.logp.toFixed(2)], ['H-bond donors ≤ 5', p.hbd <= 5, String(p.hbd)], ['H-bond acceptors ≤ 10', p.hba <= 10, String(p.hba)]];
+const veberRules = p => [['Rotatable bonds ≤ 10', p.rot <= 10, String(p.rot)], ['TPSA ≤ 140 Å²', p.tpsa <= 140, p.tpsa.toFixed(1) + ' Å²']];
+const propRows = p => [['Molar mass', p.mw.toFixed(2), 'g/mol'], ['LogP (estimated)', p.logp.toFixed(2), ''], ['TPSA (estimated)', p.tpsa.toFixed(1), 'Å²'], ['H-bond donors', p.hbd, ''], ['H-bond acceptors', p.hba, ''], ['Rotatable bonds', p.rot, 'approx.'], ['Rings', p.rings, ''], ['Heavy atoms', p.heavy, '']];
+const CSV_HEAD = ['name', 'category', 'smiles', 'formula', 'molar_mass_g_mol', 'logp_estimated', 'tpsa_A2_estimated', 'h_bond_donors', 'h_bond_acceptors', 'rotatable_bonds', 'rings', 'heavy_atoms', 'lipinski_rules_passed', 'veber_rules_passed'];
+const csvLine = (name, cat, smiles, p) => [csvText(name), csvText(cat), csvText(smiles), plainF(p.formula), p.mw.toFixed(2), p.logp.toFixed(2), p.tpsa.toFixed(1), p.hbd, p.hba, p.rot, p.rings, p.heavy, lipRules(p).filter(r => r[1]).length, veberRules(p).filter(r => r[1]).length].join(',');
+
+function lightSvg(smiles) {
+  return new Promise(res => {
+    if (typeof SmilesDrawer === 'undefined') return res('');
+    const holder = document.createElement('div');
+    holder.style.cssText = 'position:absolute;left:-9999px;top:0;width:640px;height:480px;visibility:hidden';
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); holder.appendChild(svg); document.body.appendChild(holder);
+    const k = '#111111', theme = { C: k, O: '#D71921', N: k, F: k, CL: k, BR: k, I: k, P: k, S: k, B: k, SI: k, H: k, BACKGROUND: 'transparent' };
+    const sd = new SmilesDrawer.SvgDrawer({ width: 640, height: 480, bondThickness: 1.7, padding: 24, themes: { paper: theme } });
+    const done = out => { holder.remove(); res(out); };
+    SmilesDrawer.parse(smiles, t => {
+      try {
+        sd.draw(t, svg, 'paper');
+        if (!svg.getAttribute('viewBox')) svg.setAttribute('viewBox', '0 0 640 480');
+        if (!svg.getAttribute('xmlns')) svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        svg.removeAttribute('width'); svg.removeAttribute('height'); svg.style.width = ''; svg.style.height = '';
+        done(svg.outerHTML);
+      } catch (e) { done(''); }
+    }, () => done(''));
+  });
+}
+
+function buildReport(name, smiles, g, p, svg, cat) {
+  const date = new Date().toISOString().slice(0, 10), f = plainF(p.formula), slug = slugOf(name);
+  const lip = lipRules(p), ve = veberRules(p), lp = lip.filter(r => r[1]).length, vp = ve.filter(r => r[1]).length;
+  const verdict = (lp >= 3 ? 'Oral drug-like by Lipinski' : 'Unlikely oral drug by Lipinski') + ' (' + lp + ' of 4 rules met)';
+  const veVerdict = vp === 2 ? 'Meets both Veber criteria for oral bioavailability' : vp + ' of 2 Veber criteria met';
+  const tbl = rows => '<table>' + rows.map(r => `<tr><th>${esc(r[0])}</th><td class="v">${esc(r[1])}${r[2] ? ' <span class="u">' + esc(r[2]) + '</span>' : ''}</td></tr>`).join('') + '</table>';
+  const rules = rs => '<table>' + rs.map(r => `<tr><th><span class="dot ${r[1] ? 'on' : 'off'}"></span>${esc(r[0])}</th><td class="v">${esc(r[2])}</td></tr>`).join('') + '</table>';
+  const disclaimer = 'LogP and TPSA are estimates from atom and fragment contributions, usually within about 0.5 of RDKit. Rotatable bonds and hydrogen-bond counts are simple structural counts. This is a rough screening report, not medical or pharmaceutical advice.';
+  const body = `<h1>${esc(name.toUpperCase())}<i>.</i></h1><div class="meta">Molecule report · ${date}</div>` +
+    `<div class="struct">${svg || '<p class="note">Structure drawing unavailable.</p>'}</div>` +
+    `<h2>Identity</h2><table><tr><th>Formula</th><td class="v">${p.formula}</td></tr><tr><th>SMILES</th><td class="smi">${esc(smiles)}</td></tr></table>` +
+    `<h2>Properties</h2>${tbl(propRows(p))}` +
+    `<h2>Drug-likeness · Lipinski</h2>${rules(lip)}<p class="verdict">${esc(verdict)}</p>` +
+    `<h2>Drug-likeness · Veber</h2>${rules(ve)}<p class="verdict">${esc(veVerdict)}</p>` +
+    `<p class="note">${esc(disclaimer)}</p>`;
+  const doc = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + esc(name) + ' · Molecule report</title>' +
+    '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Doto:wght@900&family=Space+Mono:wght@400&display=swap">' +
+    '<style>body{margin:0;padding:32px 16px;background:#fff}' + REPORT_CSS + '</style></head><body><div class="rp">' + body + '</div></body></html>';
+  const md = ['# ' + name, '', '_Molecule report · ' + date + '_', '', '**Formula:** ' + f + '  ', '**SMILES:** `' + smiles + '`', '',
+    '## Properties', '', '| Property | Value |', '|---|---|', ...propRows(p).map(r => '| ' + r[0] + ' | ' + r[1] + (r[2] ? ' ' + r[2] : '') + ' |'), '',
+    '## Lipinski rule of five', '', ...lip.map(r => '- [' + (r[1] ? 'x' : ' ') + '] ' + r[0] + ' (' + r[2] + ')'), '', '**' + verdict + '**', '',
+    '## Veber rules', '', ...ve.map(r => '- [' + (r[1] ? 'x' : ' ') + '] ' + r[0] + ' (' + r[2] + ')'), '', '**' + veVerdict + '**', '', '> ' + disclaimer, ''].join('\n');
+  const json = JSON.stringify({
+    name, smiles, formula: f, date,
+    properties: { molar_mass_g_per_mol: +p.mw.toFixed(2), logp_estimated: +p.logp.toFixed(2), tpsa_A2_estimated: +p.tpsa.toFixed(1), h_bond_donors: p.hbd, h_bond_acceptors: p.hba, rotatable_bonds: p.rot, rings: p.rings, heavy_atoms: p.heavy },
+    lipinski: { rules_passed: lp, rules: lip.map(r => ({ rule: r[0], pass: r[1], value: r[2] })) },
+    veber: { rules_passed: vp, rules: ve.map(r => ({ rule: r[0], pass: r[1], value: r[2] })) }
+  }, null, 2) + '\n';
+  const file = async k => {
+    if (k === 'html') return { filename: slug + '-report.html', data: doc };
+    if (k === 'md') return { filename: slug + '-report.md', data: md };
+    if (k === 'csv') return { filename: slug + '.csv', data: CSV_HEAD.join(',') + '\n' + csvLine(name, cat, smiles, p) + '\n' };
+    if (k === 'json') return { filename: slug + '.json', data: json };
+    if (k === 'svg') { if (!svg) throw new Error('no structure'); return { filename: slug + '-structure.svg', data: svg }; }
+    if (k === 'mol') { const r = cache3d[smiles] || (cache3d[smiles] = embed3D(g)); return { filename: slug + '-3d.mol.txt', data: r.molblock }; }
+    if (k === 'all') {
+      const rows = Object.keys(ALL).map(n => csvLine(n, CATS.find(c => LIB[c][n]), ALL[n], props(parseSmiles(ALL[n]))));
+      return { filename: 'molecule-library.csv', data: CSV_HEAD.join(',') + '\n' + rows.join('\n') + '\n' };
+    }
+    throw new Error('unknown file');
+  };
+  return { body, file };
+}
+
+let lastReport = null, reportSeq = 0, DL = null;
+async function renderReport() {
+  if (!curG) return;
+  const seq = ++reportSeq, g = curG, smiles = cur.smiles, name = cur.name;
+  const cat = name === 'Custom molecule' ? 'custom' : (CATS.find(c => LIB[c][name]) || 'custom');
+  let p; try { p = props(g); } catch (e) { return; }
+  const svg = await lightSvg(smiles);
+  if (seq !== reportSeq) return;
+  lastReport = buildReport(name, smiles, g, p, svg, cat);
+  $('rp').innerHTML = lastReport.body;
+  $('dlmsg').textContent = '';
+  renderDlButtons();
+}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
+  const ta = document.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(ta); ta.select();
+  let ok = false; try { ok = document.execCommand('copy'); } catch (e) {} ta.remove(); return ok;
+}
+async function saveFile(f) {
+  if (!DL && window.claude && window.claude.use) { try { DL = (await window.claude.use('downloads')) || null; } catch (e) {} }
+  if (DL) {
+    try { await DL.save(f); return 'Saved ' + f.filename + '.'; }
+    catch (e) { if (e && e.code === 'declined') return 'Download cancelled.'; }
+  }
+  try {
+    const n = f.filename.toLowerCase();
+    const type = /\.html$/.test(n) ? 'text/html' : /\.csv$/.test(n) ? 'text/csv' : /\.json$/.test(n) ? 'application/json' : /\.svg$/.test(n) ? 'image/svg+xml' : 'text/plain';
+    const url = URL.createObjectURL(new Blob([f.data], { type: type + ';charset=utf-8' }));
+    const a = document.createElement('a'); a.href = url; a.download = f.filename; a.style.display = 'none';
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+    const copied = await copyText(f.data);
+    return 'Downloaded ' + f.filename + '.' + (copied ? ' If your browser blocked it, the text is on your clipboard.' : '');
+  } catch (e) {
+    return (await copyText(f.data)) ? 'Download unavailable here. Copied ' + f.filename + ' to your clipboard.' : 'Could not download or copy. Select the report and copy it by hand.';
+  }
+}
+async function deliver(k) {
+  const say = t => { $('dlmsg').textContent = t; };
+  if (!lastReport) return;
+  let f; try { f = await lastReport.file(k); } catch (e) { say('Could not build that file for this molecule.'); return; }
+  say(await saveFile(f));
+}
+function renderDlButtons() {
+  const row = $('dlrow'); row.innerHTML = '';
+  const items = [['HTML REPORT', 'html'], ['MARKDOWN', 'md'], ['CSV', 'csv'], ['JSON', 'json'], ['STRUCTURE SVG', 'svg'], ['3D MOL', 'mol'], ['ALL ' + Object.keys(ALL).length + ' · CSV', 'all']];
+  items.forEach(([label, k]) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'pill' + (k === 'html' ? ' red' : '');
+    b.textContent = '↓ ' + label; b.disabled = !lastReport; if (b.disabled) b.style.opacity = '.4';
+    b.onclick = () => deliver(k); row.appendChild(b);
+  });
+  $('dlnote').textContent = (DL ? 'Each download asks you to confirm before it saves. ' : 'Files save to your downloads folder. If your host blocks downloads, the text is copied instead. ') + '3D MOL saves as .mol.txt; rename it to .mol if your software needs that.';
+}
+try { if (window.claude && window.claude.use) window.claude.use('downloads').then(d => { DL = d || null; renderDlButtons(); }).catch(() => {}); } catch (e) {}
+renderDlButtons();
+
+document.querySelectorAll('#tabs .pill').forEach(b => b.onclick = () => setTab(b.dataset.tab));
+document.querySelectorAll('#ctl3d [data-style]').forEach(b => b.onclick = () => {
+  styleKind = b.dataset.style;
+  document.querySelectorAll('#ctl3d [data-style]').forEach(x => x.setAttribute('aria-pressed', x === b));
+  render3D();
+});
+$('spin').onclick = () => { spinOn = !spinOn; $('spin').setAttribute('aria-pressed', spinOn); if (viewer) { try { viewer.spin(spinOn ? 'y' : false, 0.6); } catch (e) {} } };
+$('copymol').onclick = async () => {
+  const res = cache3d[cur.smiles]; if (!res) return;
+  const btn = $('copymol');
+  try { await navigator.clipboard.writeText(res.molblock); btn.textContent = 'COPIED'; }
+  catch (e) { const ta = document.createElement('textarea'); ta.value = res.molblock; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); btn.textContent = 'COPIED'; } catch (x) { btn.textContent = 'COPY FAILED'; } ta.remove(); }
+  setTimeout(() => { btn.textContent = 'COPY .MOL'; }, 1500);
+};
+$('custom').addEventListener('input', e => {
+  const v = e.target.value.trim();
+  if (v) cur = { name: 'Custom molecule', smiles: v };
+  else if (cur.name === 'Custom molecule') cur = lastLib;
+  else return;
+  renderMols(); show();
+});
+$('search').addEventListener('input', () => { renderCats(); renderMols(); });
+$('rand').onclick = () => { const names = Object.keys(ALL); const n = names[Math.floor(Math.random() * names.length)]; cat = CATS.find(c => LIB[c][n]); $('search').value = ''; $('custom').value = ''; renderCats(); pick(n, ALL[n]); };
+$('count').textContent = Object.keys(ALL).length;
+new MutationObserver(show).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+matchMedia('(prefers-color-scheme: light)').addEventListener('change', show);
+renderCats(); renderMols(); show();
+</script>
+<script>
+(function () {
+'use strict';
+const PAGES = [['home','HOME'],['explore','EXPLORER'],['theory','THEORY'],['compare','COMPARE'],['analysis','ANALYSIS'],['quiz','QUIZ'],['final','FINAL REPORT']];
+const catOf = n => CATS.find(c => LIB[c][n]) || 'custom';
+const f1 = (x, d) => (Math.round(x * Math.pow(10, d)) / Math.pow(10, d)).toFixed(d);
+let page = 'home';
+
+function goPage(p) {
+  page = p;
+  PAGES.forEach(([k]) => { const el = $('pg-' + k); if (el) el.hidden = k !== p; });
+  document.querySelectorAll('#nav .pill').forEach(b => b.setAttribute('aria-pressed', b.dataset.pg === p));
+  if (p === 'explore') show();
+  if (p === 'compare') renderCompare();
+  if (p === 'analysis') renderAnalysis();
+  if (p === 'final') renderFinal();
+  window.scrollTo(0, 0);
+}
+function openMol(n) { if (!ALL[n]) return; cat = catOf(n); $('search').value = ''; $('custom').value = ''; renderCats(); pick(n, ALL[n]); goPage('explore'); }
+async function saveOut(f, msg) {
+  const say = t => { msg.textContent = t; };
+  say(await saveFile(f));
+}
+const dlLabel = t => '↓ ' + t;
+
+/* ---- nav ---- */
+const nav = $('nav');
+PAGES.forEach(([k, l]) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'pill'; b.textContent = l; b.dataset.pg = k; b.setAttribute('aria-pressed', k === page); b.onclick = () => goPage(k); nav.appendChild(b); });
+
+/* ---- home ---- */
+$('pg-home').innerHTML =
+  '<section class="panel"><p class="lbl">Cheminformatics virtual laboratory</p><h2 class="name">WHAT CAN STUDENTS DO?</h2><ul class="fl">' +
+  ['Enter any SMILES notation','Validate molecular structures','Generate 2D structures','Generate interactive 3D structures','Select different visualization styles and a van der Waals surface','Calculate complete molecular properties','Download molecular reports','Compare multiple molecules','Complete an assessment'].map(t => '<li>' + t + '</li>').join('') +
+  '</ul><div class="row"><button class="pill red" type="button" id="goExp">OPEN THE EXPLORER</button></div></section>' +
+  '<section class="panel"><p class="lbl">Learning objectives</p><ul class="fl"><li>Read and write SMILES strings</li><li>Relate structure to formula, mass and bonding</li><li>Interpret LogP, TPSA, HBD and HBA</li><li>Compare drug-like properties across molecules</li></ul></section>' +
+  '<section class="panel"><p class="lbl">Example molecules · tap one to open it</p><div class="tw list"><table class="dt"><tr><th>Molecule</th><th>SMILES</th></tr>' +
+  Object.keys(ALL).map(n => '<tr class="cl" data-n="' + esc(n) + '"><td>' + esc(n) + '</td><td>' + esc(ALL[n]) + '</td></tr>').join('') + '</table></div></section>';
+$('pg-home').addEventListener('click', e => { const r = e.target.closest ? e.target.closest('[data-n]') : null; if (r) openMol(r.dataset.n); });
+$('goExp').onclick = () => goPage('explore');
+
+/* ---- theory ---- */
+const card = (t, b) => '<div class="card"><b>' + t + '</b>' + b + '</div>';
+$('pg-theory').innerHTML = '<section class="panel"><p class="lbl">Theory</p><h2 class="name">THE IDEAS BEHIND THE NUMBERS</h2>' +
+  card('SMILES', 'Simplified Molecular Input Line Entry System. Atoms are letters, = and # are double and triple bonds, ( ) open branches, digits close rings and lowercase letters are aromatic atoms. Ethanol is CCO, benzene is c1ccccc1.') +
+  card('Formula and molar mass', 'The formula lists C, then H, then other elements alphabetically. Molar mass (g/mol) is the sum of atomic masses, including implicit hydrogens.') +
+  card('Sigma and pi bonds', 'Every bond contains one sigma (σ) bond. A double bond adds one pi (π) bond and a triple bond adds two. Aromatic rings add one π bond for every two ring atoms that donate a p electron.') +
+  card('LogP', 'Logarithm of the octanol–water partition coefficient. Higher values mean more lipophilic (fat-loving). Here it is estimated from atom and fragment contributions.') +
+  card('TPSA', 'Topological polar surface area, the surface contributed by polar atoms (N, O and their hydrogens). Below about 140 Å² favours passing through membranes.') +
+  card('HBD and HBA', 'Hydrogen-bond donors are N or O atoms carrying hydrogen. Acceptors are N and O atoms. They control solubility and binding.') +
+  card('Lipinski and Veber', 'Oral drug-like molecules usually have MW ≤ 500, LogP ≤ 5, HBD ≤ 5 and HBA ≤ 10 (Lipinski), and ≤ 10 rotatable bonds with TPSA ≤ 140 Å² (Veber).') +
+  card('3D models', 'Sticks emphasize bonding. Ball and stick shows atoms as spheres joined by sticks. Space fill shows approximate molecular volume. Wire is a simplified skeleton. The van der Waals surface wraps the molecule in a translucent shell.') +
+  '</section>';
+
+/* ---- compare ---- */
+const cmp = [];
+['Ethanol','Benzene','Phenol','Acetic acid','Aspirin'].forEach(n => { try { cmp.push({ name: n, smiles: ALL[n], p: props(parseSmiles(ALL[n])) }); } catch (e) {} });
+function renderCompare() {
+  const rows = cmp.map((c, i) => '<tr><td>' + esc(c.name) + '</td><td>' + f1(c.p.mw, 3) + '</td><td>' + f1(c.p.logp, 3) + '</td><td>' + f1(c.p.tpsa, 2) + '</td><td>' + c.p.hbd + '</td><td>' + c.p.hba + '</td><td>' + c.p.rot + '</td><td>' + c.p.rings + '</td><td><button class="pill" type="button" data-rm="' + i + '" aria-label="Remove ' + esc(c.name) + '">✕</button></td></tr>').join('');
+  $('pg-compare').innerHTML = '<section class="panel"><p class="lbl">Comparison table</p><div class="note" style="margin:0 0 10px">Current molecule: ' + (curG ? esc(cur.name) : 'invalid SMILES') + '</div>' +
+    '<div class="tab-row"><button class="pill red" type="button" id="cAdd"' + (curG ? '' : ' disabled') + '>+ ADD CURRENT MOLECULE</button><button class="pill" type="button" id="cCsv"' + (cmp.length ? '' : ' disabled') + '>' + dlLabel('COMPARISON CSV') + '</button><button class="pill" type="button" id="cClr">CLEAR</button></div>' +
+    '<div class="hint" id="cMsg" role="status" style="min-height:1.4em"></div>' +
+    '<div class="tw"><table class="dt"><tr><th>Molecule</th><th>MW</th><th>LogP</th><th>TPSA</th><th>HBD</th><th>HBA</th><th>RotB</th><th>Rings</th><th></th></tr>' + (rows || '<tr><td colspan="9">Table is empty. Add a molecule.</td></tr>') + '</table></div>' +
+    '<div class="note">Pick any molecule in the Explorer, then come back here and add it.</div></section>';
+  $('cAdd').onclick = () => {
+    if (!curG) return;
+    if (cmp.some(c => c.smiles === cur.smiles)) { $('cMsg').textContent = 'Already in the table.'; return; }
+    cmp.push({ name: cur.name === 'Custom molecule' ? 'Custom ' + (cmp.length + 1) : cur.name, smiles: cur.smiles, p: props(curG) }); renderCompare();
+  };
+  $('cClr').onclick = () => { cmp.length = 0; renderCompare(); };
+  $('cCsv').onclick = () => saveOut({ filename: 'comparison-table.csv', data: CSV_HEAD.join(',') + '\n' + cmp.map(c => csvLine(c.name, catOf(c.name), c.smiles, c.p)).join('\n') + '\n' }, $('cMsg'));
+  document.querySelectorAll('#pg-compare [data-rm]').forEach(b => { b.onclick = () => { cmp.splice(+b.dataset.rm, 1); renderCompare(); }; });
+}
+
+/* ---- structure-property analysis ---- */
+const AX = { mw: ['Molar mass', p => p.mw], logp: ['LogP', p => p.logp], tpsa: ['TPSA', p => p.tpsa], hbd: ['H-bond donors', p => p.hbd], hba: ['H-bond acceptors', p => p.hba], rot: ['Rotatable bonds', p => p.rot], rings: ['Rings', p => p.rings], heavy: ['Heavy atoms', p => p.heavy] };
+let ax = 'mw', ay = 'logp';
+function pearson(x, y) { const n = x.length, mx = x.reduce((a, b) => a + b, 0) / n, my = y.reduce((a, b) => a + b, 0) / n; let a = 0, b = 0, c = 0; x.forEach((v, i) => { a += (v - mx) * (y[i] - my); b += (v - mx) * (v - mx); c += (y[i] - my) * (y[i] - my); }); return b > 0 && c > 0 ? a / Math.sqrt(b * c) : NaN; }
+function renderAnalysis() {
+  const opts = k => Object.keys(AX).map(id => '<option value="' + id + '"' + (k === id ? ' selected' : '') + '>' + AX[id][0] + '</option>').join('');
+  let body = '';
+  if (cmp.length < 2) body = '<div class="card">Add at least two molecules in the Compare page first.</div>';
+  else {
+    const xs = cmp.map(c => AX[ax][1](c.p)), ys = cmp.map(c => AX[ay][1](c.p));
+    const W = 360, H = 280, pd = 40, lo = a => Math.min.apply(null, a), hi = a => Math.max.apply(null, a);
+    const sx = lo(xs) === hi(xs) ? 1 : hi(xs) - lo(xs), sy = lo(ys) === hi(ys) ? 1 : hi(ys) - lo(ys);
+    const px = v => pd + (v - lo(xs)) / sx * (W - 2 * pd), py = v => H - pd - (v - lo(ys)) / sy * (H - 2 * pd);
+    const tx = 'font-family:var(--body);font-size:10px;fill:var(--fg)';
+    const pts = cmp.map((c, i) => '<circle cx="' + px(xs[i]) + '" cy="' + py(ys[i]) + '" r="6" style="fill:var(--red)"/><text x="' + (px(xs[i]) + 9) + '" y="' + (py(ys[i]) - 7) + '" style="' + tx + '">' + esc(c.name) + '</text>').join('');
+    const r = pearson(xs, ys), ar = Math.abs(r), strength = ar > .7 ? 'strong' : ar > .4 ? 'moderate' : 'weak';
+    const iH = ys.indexOf(hi(ys)), iL = ys.indexOf(lo(ys)), g0 = cmp.filter(c => c.p.hbd === 0), g1 = cmp.filter(c => c.p.hbd > 0), av = g => g.reduce((s, c) => s + c.p.logp, 0) / g.length;
+    body = '<div class="tw" style="padding:8px"><svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Scatter plot"><line x1="' + pd + '" y1="' + (H - pd) + '" x2="' + (W - 10) + '" y2="' + (H - pd) + '" style="stroke:var(--fg)"/><line x1="' + pd + '" y1="10" x2="' + pd + '" y2="' + (H - pd) + '" style="stroke:var(--fg)"/>' + pts +
+      '<text x="' + (W / 2) + '" y="' + (H - 8) + '" text-anchor="middle" style="' + tx + '">' + AX[ax][0] + ' (' + f1(lo(xs), 2) + ' to ' + f1(hi(xs), 2) + ')</text><text transform="rotate(-90 12 ' + (H / 2) + ')" x="12" y="' + (H / 2) + '" text-anchor="middle" style="' + tx + '">' + AX[ay][0] + ' (' + f1(lo(ys), 2) + ' to ' + f1(hi(ys), 2) + ')</text></svg></div>' +
+      '<p class="lbl" style="margin-top:16px">Observations</p>' +
+      card('Correlation', AX[ax][0] + ' vs ' + AX[ay][0] + ': r = ' + (isNaN(r) ? 'undefined (one value is constant)' : f1(r, 2) + ', ' + strength + (r > 0 ? ' positive' : ' negative')) + ' across ' + cmp.length + ' molecules.') +
+      card('Extremes', 'Highest ' + AX[ay][0] + ': ' + esc(cmp[iH].name) + ' (' + f1(ys[iH], 2) + '). Lowest: ' + esc(cmp[iL].name) + ' (' + f1(ys[iL], 2) + ').') +
+      (g0.length && g1.length ? card('Hydrogen-bond donors', 'Mean LogP without donors: ' + f1(av(g0), 2) + '. With donors: ' + f1(av(g1), 2) + '. Donors usually make a molecule friendlier to water.') : '');
+  }
+  $('pg-analysis').innerHTML = '<section class="panel"><p class="lbl">Structure–property analysis</p><div class="note" style="margin:0 0 12px">Uses the molecules in the comparison table.</div><p class="lbl">X axis</p><select class="field" id="aX">' + opts(ax) + '</select><p class="lbl">Y axis</p><select class="field" id="aY">' + opts(ay) + '</select>' + body + '</section>';
+  $('aX').onchange = e => { ax = e.target.value; renderAnalysis(); };
+  $('aY').onchange = e => { ay = e.target.value; renderAnalysis(); };
+}
+
+/* ---- assessment ---- */
+const QZ = [
+  ['What is the full form of SMILES?', ['Simplified Molecular Input Line Entry System','Standard Molecular Information Language Encoding System','Simple Molecular Identification and Labeling System']],
+  ['What does a SMILES string represent?', ['A molecular structure using text','A spectroscopy technique','A laboratory instrument']],
+  ['Which SMILES represents ethanol?', ['CCO','c1ccccc1','CC(=O)O']],
+  ['Which SMILES represents benzene?', ['c1ccccc1','CCO','O=C=O']],
+  ['In SMILES, parentheses are mainly used to indicate…', ['Branches','Ring closures','Charges']],
+  ['How many pi bonds are in CO2 (O=C=O)?', ['2','1','4']],
+  ['A positive LogP means the molecule is…', ['More lipophilic than hydrophilic','More water soluble','Electrically charged']],
+  ['TPSA is related to…', ['Polar atoms and membrane permeability','Boiling point','Molecular colour']],
+  ['Lipinski rule of five: maximum molar mass?', ['500 g/mol','180 g/mol','1000 g/mol']],
+  ['How many sigma bonds does ethanol (C2H6O) have?', ['8','9','7']]
+];
+const ans = {};
+function renderQuiz() {
+  $('pg-quiz').innerHTML = '<section class="panel"><p class="lbl">Assessment</p><h2 class="name">CHEMINFORMATICS ASSESSMENT</h2>' +
+    QZ.map((q, i) => '<div class="qb" id="qb' + i + '"><p>' + (i + 1) + '. ' + esc(q[0]) + '</p>' + [0, 1, 2].map(k => (k + i) % 3).map(o => '<label><input type="radio" name="q' + i + '" value="' + o + '"> <span>' + esc(q[1][o]) + '</span></label>').join('') + '<div class="note" id="qn' + i + '"></div></div>').join('') +
+    '<div class="row"><button class="pill red" type="button" id="qSub">SUBMIT ASSESSMENT</button><button class="pill" type="button" id="qRst">RESET</button></div><div id="qRes"></div></section>';
+  document.querySelectorAll('#pg-quiz input[type=radio]').forEach(r => { r.onchange = () => { ans[+r.name.slice(1)] = +r.value; }; });
+  $('qSub').onclick = () => {
+    let sc = 0, blank = 0;
+    QZ.forEach((q, i) => { const el = $('qb' + i); el.className = 'qb'; $('qn' + i).textContent = ''; if (ans[i] === undefined) { blank++; return; } const ok = ans[i] === 0; if (ok) sc++; el.className = 'qb ' + (ok ? 'ok' : 'no'); if (!ok) $('qn' + i).textContent = 'Correct answer: ' + q[1][0]; });
+    $('qRes').innerHTML = '<div class="score ' + (sc >= 6 ? '' : 'off') + '">' + sc + '/' + QZ.length + '</div><div class="lbl" style="margin-top:6px">' + (blank ? blank + ' unanswered. ' : '') + (sc >= 8 ? 'Excellent work' : sc >= 5 ? 'Good, review the theory page' : 'Keep practising') + '</div>';
+  };
+  $('qRst').onclick = () => { Object.keys(ans).forEach(k => delete ans[k]); renderQuiz(); };
+}
+renderQuiz();
+
+/* ---- final report ---- */
+const fin = { name: '', reg: '', rep: null };
+function snap3d() {
+  try {
+    if (typeof $3Dmol === 'undefined' || !curG) return '';
+    let res = cache3d[cur.smiles]; if (!res) res = cache3d[cur.smiles] = embed3D(curG);
+    const h = document.createElement('div'); h.style.cssText = 'position:fixed;left:-9999px;top:0;width:420px;height:420px'; document.body.appendChild(h);
+    const cf = a => (a.elem === 'C' || a.elem === 'H' || a.elem === 'N') ? '#1E5BFF' : '#D71921';
+    const v = $3Dmol.createViewer(h, { backgroundColor: '#0a0a0a' });
+    v.addModel(res.molblock, 'sdf'); v.setStyle({}, { stick: { radius: 0.11, color: '#FFFFFF' }, sphere: { scale: 0.38, colorfunc: cf } });
+    v.zoomTo(); v.render(); const u = v.pngURI(); try { v.clear(); } catch (e) {} h.remove();
+    return typeof u === 'string' && u.indexOf('data:') === 0 ? u : '';
+  } catch (e) { return ''; }
+}
+function renderFinal() {
+  const ok = !!curG; let p = null, b = null; if (ok) { p = props(curG); b = bondInfo(curG); }
+  $('pg-final').innerHTML = '<section class="panel"><p class="lbl">Final project report</p><div class="note" style="margin:0 0 12px">Uses the molecule selected in the Explorer.</div>' +
+    '<p class="lbl">Student name for report</p><input class="field" id="fName" type="text" autocomplete="off" value="' + esc(fin.name) + '" style="margin-bottom:12px">' +
+    '<p class="lbl">Registration number for report</p><input class="field" id="fReg" type="text" autocomplete="off" value="' + esc(fin.reg) + '" style="margin-bottom:12px">' +
+    '<p class="lbl">Molecule</p><div style="word-break:break-all">' + (ok ? esc(cur.name) + ' · <span style="color:var(--dim)">' + esc(cur.smiles) + '</span>' : '<span style="color:var(--red)">Invalid SMILES. Fix it in the Explorer.</span>') + '</div>' +
+    (ok ? '<div class="stats" style="margin-top:14px">' + stat('Formula', p.formula) + stat('Molar mass', p.mw.toFixed(2), 'g/mol', true) + stat('Sigma (σ) bonds', b.sigma) + stat('Pi (π) bonds', b.pi) + '</div>' : '') +
+    '<div class="row"><button class="pill red" type="button" id="fGen"' + (ok ? '' : ' disabled') + '>GENERATE PERSONALIZED FINAL REPORT</button></div></section>' +
+    '<section class="panel" id="fOut" hidden><div class="tab-row" id="fDl"></div><div class="hint" id="fMsg" role="status" style="min-height:1.4em;margin-bottom:12px"></div><div class="paperwrap"><div class="rp" id="fRp"></div></div></section>';
+  $('fName').oninput = e => { fin.name = e.target.value; };
+  $('fReg').oninput = e => { fin.reg = e.target.value; };
+  $('fGen').onclick = genFinal;
+  if (fin.rep) showFinal();
+}
+async function genFinal() {
+  if (!curG) return;
+  const msg = $('fMsg'), out = $('fOut'); out.hidden = false; msg.textContent = 'Building report…'; $('fRp').innerHTML = '';
+  await new Promise(r => setTimeout(r, 30));
+  const name = cur.name, smiles = cur.smiles, g = curG, p = props(g), b = bondInfo(g);
+  const svg = await lightSvg(smiles), img = snap3d();
+  const stu = fin.name.trim() || '—', reg = fin.reg.trim() || '—', date = new Date().toISOString().slice(0, 10);
+  const lip = lipRules(p), ve = veberRules(p), lp = lip.filter(r => r[1]).length, vp = ve.filter(r => r[1]).length, f = plainF(p.formula);
+  const tbl = rows => '<table>' + rows.map(r => '<tr><th>' + esc(r[0]) + '</th><td class="v">' + esc(r[1]) + (r[2] ? ' <span class="u">' + esc(r[2]) + '</span>' : '') + '</td></tr>').join('') + '</table>';
+  const rules = rs => '<table>' + rs.map(r => '<tr><th><span class="dot ' + (r[1] ? 'on' : 'off') + '"></span>' + esc(r[0]) + '</th><td class="v">' + esc(r[2]) + '</td></tr>').join('') + '</table>';
+  const interp = (lp === 4 ? 'The molecule satisfies all four Lipinski criteria and is predicted to be drug-like. ' : lp === 3 ? 'The molecule breaks one Lipinski criterion, which is still acceptable for many oral drugs. ' : 'The molecule breaks ' + (4 - lp) + ' Lipinski criteria, so oral drug-likeness is doubtful. ') +
+    (p.logp > 0 ? 'A positive LogP shows a preference for lipid environments. ' : 'A LogP near or below zero shows good affinity for water. ') +
+    'The TPSA of ' + p.tpsa.toFixed(1) + ' Å² ' + (p.tpsa <= 140 ? 'is within the range that favours crossing membranes.' : 'is high and may limit passing through membranes.');
+  const body = '<h1>FINAL STUDENT MOLECULAR ANALYSIS REPORT<i>.</i></h1><div class="meta">Cheminformatics virtual laboratory · ' + date + '</div>' +
+    '<h2>Student</h2>' + tbl([['Name', stu], ['Registration number', reg]]) +
+    '<h2>Molecule</h2><table><tr><th>Name</th><td class="v">' + esc(name) + '</td></tr><tr><th>Formula</th><td class="v">' + p.formula + '</td></tr><tr><th>SMILES</th><td class="smi">' + esc(smiles) + '</td></tr></table>' +
+    '<h2>2D structure</h2><div class="struct">' + (svg || '<p class="note">Structure drawing unavailable.</p>') + '</div>' +
+    (img ? '<h2>3D model</h2><div class="struct" style="background:#0a0a0a"><img src="' + img + '" alt="3D model" style="display:block;margin:0 auto;max-width:100%;width:340px"></div>' : '') +
+    '<h2>Atoms and bonds</h2>' + tbl([['Heavy atoms', p.heavy], ['Total atoms (with H)', b.total], ['Heavy-atom bonds', b.heavyBonds], ['Sigma (σ) bonds', b.sigma], ['Pi (π) bonds', b.pi], ['Total bonds (σ+π)', b.bonds], ['Rings', p.rings]]) +
+    '<h2>Properties</h2>' + tbl(propRows(p)) +
+    '<h2>Drug-likeness · Lipinski</h2>' + rules(lip) + '<p class="verdict">' + lp + ' of 4 rules met</p>' +
+    '<h2>Drug-likeness · Veber</h2>' + rules(ve) + '<p class="verdict">' + vp + ' of 2 criteria met</p>' +
+    '<h2>Interpretation</h2><p>' + esc(interp) + '</p><p class="note">LogP and TPSA are estimates from atom and fragment contributions, usually within about 0.5 of RDKit. Rough screening only, not medical or pharmaceutical advice.</p>';
+  const doc = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + esc(name) + ' · Final report</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Doto:wght@900&family=Space+Mono:wght@400&display=swap"><style>body{margin:0;padding:32px 16px;background:#fff}' + REPORT_CSS + '</style></head><body><div class="rp">' + body + '</div></body></html>';
+  const md = ['# Final Student Molecular Analysis Report', '', '_' + date + '_', '', '**Student:** ' + stu + '  ', '**Registration number:** ' + reg, '', '## Molecule', '', '- Name: ' + name, '- Formula: ' + f, '- SMILES: `' + smiles + '`', '',
+    '## Atoms and bonds', '', '- Heavy atoms: ' + p.heavy, '- Total atoms: ' + b.total, '- Sigma bonds: ' + b.sigma, '- Pi bonds: ' + b.pi, '- Total bonds: ' + b.bonds, '',
+    '## Properties', '', ...propRows(p).map(r => '- ' + r[0] + ': ' + r[1] + (r[2] ? ' ' + r[2] : '')), '', '## Lipinski (' + lp + '/4)', '', ...lip.map(r => '- [' + (r[1] ? 'x' : ' ') + '] ' + r[0] + ' (' + r[2] + ')'), '', '## Veber (' + vp + '/2)', '', ...ve.map(r => '- [' + (r[1] ? 'x' : ' ') + '] ' + r[0] + ' (' + r[2] + ')'), '', '## Interpretation', '', interp, ''].join('\n');
+  const slug = slugOf(stu === '—' ? name : stu + '-' + name);
+  fin.rep = { body, files: { html: { filename: slug + '-final-report.html', data: doc }, md: { filename: slug + '-final-report.md', data: md }, csv: { filename: slug + '.csv', data: CSV_HEAD.join(',') + '\n' + csvLine(name, catOf(name), smiles, p) + '\n' } } };
+  showFinal();
+}
+function showFinal() {
+  if (!fin.rep || !$('fRp')) return;
+  $('fOut').hidden = false; $('fRp').innerHTML = fin.rep.body; $('fMsg').textContent = '';
+  const row = $('fDl'); row.innerHTML = '';
+  [['HTML REPORT', 'html', 1], ['MARKDOWN', 'md', 0], ['CSV', 'csv', 0]].forEach(([l, k, red]) => { const bt = document.createElement('button'); bt.type = 'button'; bt.className = 'pill' + (red ? ' red' : ''); bt.textContent = dlLabel(l); bt.onclick = () => saveOut(fin.rep.files[k], $('fMsg')); row.appendChild(bt); });
+}
+
+/* ---- 3D extras ---- */
+$('vdw').onclick = () => { vdwOn = !vdwOn; $('vdw').setAttribute('aria-pressed', vdwOn); if (tab === '3d') render3D(); };
+goPage('home');
+})();
+</script>
+
+
+</body></html>
